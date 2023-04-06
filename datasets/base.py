@@ -37,6 +37,7 @@ class AbstractDataset(metaclass=ABCMeta):
         pass
 
     def load_dataset(self):
+        a = torch.zeros(2).to("cuda")
         dataset_path = self._get_preprocessed_dataset_path()
         if os.path.isfile(dataset_path):
             bin_edges = np.load(self._get_bin_edge_dataset_path())
