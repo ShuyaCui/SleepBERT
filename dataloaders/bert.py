@@ -280,7 +280,7 @@ class BertEvalDataset(data_utils.Dataset):
         sample = self.samples[index]
         seq = self._getseq(sample)
         seq = torch.from_numpy(seq).long()
-        seq = torch.cat((seq, torch.tensor([0]))).to(self.device)
+        seq = torch.cat((seq, torch.tensor([0])))
         tokens, labels = self.get_masked_seq(seq)
         return torch.LongTensor(tokens), torch.LongTensor(labels)
     
