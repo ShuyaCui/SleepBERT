@@ -6,7 +6,7 @@ def set_template(args):
         args.mode = 'train'
 
         args.dataloader_code = 'bert'
-        batch = 512
+        batch = 5
         if args.dataset_code=='UKB':
             args.bert_dropout = 0.3
             args.tau = 0.3
