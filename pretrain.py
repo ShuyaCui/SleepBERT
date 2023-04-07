@@ -10,6 +10,8 @@ import multiprocessing
 import torch
 
 def pretrain():
+    torch.zeros(2).to(args.device)
+    
     if args.local_rank != -1:
         torch.cuda.set_device(args.local_rank)
         args.device = torch.device("cuda", args.local_rank)
