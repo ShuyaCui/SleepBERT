@@ -142,7 +142,7 @@ class BertTrainDataset(data_utils.Dataset):
         sample = self.samples[index]
         seq = self._getseq(sample)
         seq = torch.from_numpy(seq).long()
-        seq = torch.cat((seq, torch.tensor([0]))).to(self.device)
+        seq = torch.cat((seq, torch.tensor([0])))
         #negs = self.negative_samples[sample]
         return_list=[]
         for i in range(self.num_positive):
