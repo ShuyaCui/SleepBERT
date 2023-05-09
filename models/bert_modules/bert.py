@@ -26,7 +26,6 @@ class BERT(nn.Module):
 
         self.embedding = BERTEmbedding(vocab_size=vocab_size, embed_size=self.hidden, max_len=max_len, dropout=dropout)
 
-
         self.transformer_blocks = nn.ModuleList(
             [TransformerBlock(hidden, heads, hidden * 4, dropout) for _ in range(n_layers)])
         ######fixed model
@@ -37,7 +36,6 @@ class BERT(nn.Module):
 
     def forward(self, x):
         mask = (x > 0).unsqueeze(1).repeat(1, x.size(1), 1).unsqueeze(1)
-
         x = self.embedding(x)
         layer_output = []
         layer_output.append(x)

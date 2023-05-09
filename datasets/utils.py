@@ -1,4 +1,3 @@
-import wget
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
@@ -6,11 +5,6 @@ from tqdm import tqdm
 from pathlib import Path
 import zipfile
 import sys
-
-
-def download(url, savepath):
-    wget.download(url, str(savepath))
-
 
 def unzip(zippath, savepath):
     zip = zipfile.ZipFile(zippath)

@@ -9,7 +9,6 @@ import torch.distributed as dist
 import copy
 import random
 import numpy as np
-import pandas as pd
 import csv
 
 class BertDataloader(AbstractDataloader):
@@ -23,10 +22,10 @@ class BertDataloader(AbstractDataloader):
         self.max_len = args.bert_max_len
         self.mask_prob = args.bert_mask_prob
         self.bin_num = args.bin_num
-        self.CLOZE_MASK_TOKEN = 1e-5
-        self.num_positive = args.num_positive
-        self.rng = random.Random(args.model_init_seed)
+        self.CLOZE_MASK_TOKEN = args.bert_mask_token
+        self.seed = args.model_init_seed
         self.device = args.device
+        self.alpha = args.mixup_alpha
 
     @classmethod
     def code(cls):
@@ -51,7 +50,7 @@ class BertDataloader(AbstractDataloader):
         return dataloader
 
     def _get_train_dataset(self):
-        dataset = BertTrainDataset(self.data_train, self.num_positive, self.max_len, self.mask_prob, self.CLOZE_MASK_TOKEN, self.bin_num, self.bin_edges, self.rng, self.device)
+        dataset = BertTrainDataset(self.data_train, self.max_len, self.mask_prob, self.CLOZE_MASK_TOKEN, self.bin_num, self.bin_edges, self.seed, self.alpha, self.device)
         return dataset
 
     def _get_val_loader(self):
@@ -72,8 +71,9 @@ class BertDataloader(AbstractDataloader):
 
     def _get_eval_dataset(self, mode):
         if mode=='val':
-            dataset = BertEvalDataset(self.data_val, self.max_len, self.mask_prob, self.CLOZE_MASK_TOKEN, self.bin_num, self.bin_edges, self.rng, self.device)
+            dataset = BertEvalDataset(self.data_val, self.max_len, self.mask_prob, self.CLOZE_MASK_TOKEN, self.bin_num, self.bin_edges, self.seed, self.device)
         else:
+            # BertTestDataset needs revision!!!!
             answers = self.data_test
             dataset = BertTestDataset(self.data_train, self.data_val, answers, self.max_len, self.bin_num, self.CLOZE_MASK_TOKEN)
         return dataset
@@ -124,15 +124,16 @@ class RecWithContrastiveLearning():
         return augmented_seqs
 
 class BertTrainDataset(data_utils.Dataset):
-    def __init__(self, samples, num_positive, max_len, mask_prob, mask_token, bin_num, bin_edges, rng, device):
+    def __init__(self, samples, max_len, mask_prob, mask_token, bin_num, bin_edges, seed, alpha, device):
         self.samples = samples
-        self.num_positive = num_positive
         self.max_len = max_len
         self.mask_prob = mask_prob
         self.mask_token = mask_token
         self.bin_num = bin_num
         self.bin_edges = bin_edges
-        self.rng = rng
+        self.seed = seed
+        self.rng = random.Random(seed)
+        self.alpha = alpha
         self.device = device
 
     def __len__(self):
@@ -141,35 +142,33 @@ class BertTrainDataset(data_utils.Dataset):
     def __getitem__(self, index):
         sample = self.samples[index]
         seq = self._getseq(sample)
-        seq = torch.from_numpy(seq).long()
-        seq = torch.cat((seq, torch.tensor([0])))
+        seq_bin = np.digitize(seq, self.bin_edges)
+        seq_bin = torch.from_numpy(seq_bin).long()
+        seq_bin = torch.cat((seq_bin, torch.tensor([0])))
         #negs = self.negative_samples[sample]
         return_list=[]
-        for i in range(self.num_positive):
-            tokens, labels = self.get_masked_seq(seq)
-            return_list.append(torch.LongTensor(tokens))
-            return_list.append(torch.LongTensor(labels))
+        tokens, labels = self.get_masked_seq(seq_bin)
+        return_list.append(torch.LongTensor(tokens))
+        return_list.append(torch.LongTensor(labels))
+        
+        x_1 = seq
+        torch.manual_seed(self.seed)
+        permutation = torch.randperm(x_1.shape[0])
+        x_2 = x_1[permutation]
+        lam = np.random.beta(self.alpha, self.alpha)
+        x_aug = lam * x_1 + (1-lam) * x_2
+        return_list.append(torch.LongTensor(np.digitize(x_1, self.bin_edges)))
+        return_list.append(torch.LongTensor(np.digitize(x_2, self.bin_edges)))
+        return_list.append(torch.LongTensor(np.digitize(x_aug, self.bin_edges)))
         return tuple(return_list)
 
     def _getseq(self, sample):        
-        act = self._load_act_df(sample)
+        act = self._load_act_seq(sample)
         act_1 = self._get_seq_slidewindow(act)
-        act_bin = np.digitize(act_1, self.bin_edges)
-        return act_bin
+        return act_1
 
-    def _load_act_df(self, file_path):
-        with open(file_path, newline='') as csvfile:
-            reader = csv.reader(csvfile)
-            # Skip the first row
-            next(reader)
-            act = []
-            for row in reader:
-                if row[1] == "NA":
-                    act.append(0)
-                else:
-                    act.append(row[1])
-        act = np.array(act)
-        act = act.astype(np.float)
+    def _load_act_seq(self, file_path):
+        act = np.load(file_path)
         return act
 
     def _get_seq_slidewindow(self, seq):
@@ -188,7 +187,7 @@ class BertTrainDataset(data_utils.Dataset):
                 if prob < 0.8:
                     tokens.append(self.mask_token)
                 elif prob < 0.9:
-                    tokens.append(self.rng.randint(1, self.bin_num))
+                    tokens.append(self.rng.randint(0, self.bin_num))
                 else:
                     tokens.append(s)
                 labels.append(s)
@@ -239,38 +238,16 @@ class BertFinetuneDataset(data_utils.Dataset):
     def _getseq(self, sample):
         return self.seq[sample]
 
-class BertCLDataset(data_utils.Dataset):
-
-    def __init__(self, seq,cl_data):
-        self.seq = seq
-        self.samples = sorted(self.seq.keys())
-        self.cl_data=cl_data
-
-
-    def __len__(self):
-        return len(self.samples)
-
-    def __getitem__(self, index):
-
-        sample = self.samples[index]
-        seq = self._getseq(sample)
-        aug = self.cl_data.augment(seq)
-
-        return torch.LongTensor(aug[0]), torch.LongTensor(aug[1])
-
-    def _getseq(self, sample):
-        return self.seq[sample]
-
 class BertEvalDataset(data_utils.Dataset):
     # self.data_train, answers, self.max_len, self.CLOZE_MASK_TOKEN, self.test_negative_samples
-    def __init__(self, samples, max_len, mask_prob, mask_token, bin_num, bin_edges, rng, device):
+    def __init__(self, samples, max_len, mask_prob, mask_token, bin_num, bin_edges, seed, device):
         self.samples = samples
         self.max_len = max_len
         self.mask_prob = mask_prob
         self.mask_token = mask_token
         self.bin_num = bin_num
         self.bin_edges = bin_edges
-        self.rng = rng
+        self.rng = random.Random(seed)
         self.device = device
         
     def __len__(self):
@@ -281,8 +258,10 @@ class BertEvalDataset(data_utils.Dataset):
         seq = self._getseq(sample)
         seq = torch.from_numpy(seq).long()
         seq = torch.cat((seq, torch.tensor([0])))
+        #negs = self.negative_samples[sample]
         tokens, labels = self.get_masked_seq(seq)
-        return torch.LongTensor(tokens), torch.LongTensor(labels)
+        return_list = [torch.LongTensor(tokens),torch.LongTensor(labels)]
+        return tuple(return_list)
     
     def get_masked_seq(self, seq):
         tokens = []
@@ -310,32 +289,21 @@ class BertEvalDataset(data_utils.Dataset):
         return tokens,labels
     
     def _getseq(self, sample):        
-        act = self._load_act_df(sample)
+        act = self._load_act_seq(sample)
         act_1 = self._get_seq_slidewindow(act)
         act_bin = np.digitize(act_1, self.bin_edges)
         return act_bin
-    
-    def _load_act_df(self, file_path):
-        with open(file_path, newline='') as csvfile:
-            reader = csv.reader(csvfile)
-            # Skip the first row
-            next(reader)
-            act = []
-            for row in reader:
-                if row[1] == "NA":
-                    act.append(0)
-                else:
-                    act.append(row[1])
-        act = np.array(act)
-        act = act.astype(np.float)
-        return act
 
+    def _load_act_seq(self, file_path):
+        act = np.load(file_path)
+        return act
+    
     def _get_seq_slidewindow(self, seq):
         seq_len = len(seq)
         beg_idx = self.rng.randint(0, seq_len-self.max_len)
         temp = seq[beg_idx:beg_idx + self.max_len]
         return temp
-
+    
 class BertTestDataset(data_utils.Dataset):
     # self.data_train, answers, self.max_len, self.CLOZE_MASK_TOKEN, self.test_negative_samples
     def __init__(self, seq, max_len, bin_num, mask_token):
@@ -357,3 +325,4 @@ class BertTestDataset(data_utils.Dataset):
         for i in range(self.num_positive):
             tokens, labels = self.get_masked_seq(seq)
             return torch.LongTensor(tokens), torch.LongTensor(labels)
+

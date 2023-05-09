@@ -35,7 +35,7 @@ parser.add_argument('--test_set_size', type=int, default=0.05)
 # Dataloader
 ################
 parser.add_argument('--dataloader_code', type=str, default='bert', choices=DATALOADERS.keys())
-parser.add_argument('--num_workers', type=int, default=64)
+parser.add_argument('--num_workers', type=int, default=1)
 parser.add_argument('--dataloader_random_seed', type=float, default=0.0)
 parser.add_argument('--train_batch_size', type=int, default=64)
 parser.add_argument('--val_batch_size', type=int, default=64)
@@ -72,35 +72,31 @@ parser.add_argument('--num_epochs', type=int, default=250, help='Number of epoch
 # logger #
 parser.add_argument('--log_period_as_iter', type=int, default=12800)
 # evaluation #
-parser.add_argument('--metric_ks', nargs='+', type=int, default=[1, 5, 10, 20], help='ks for Metric@k')
-parser.add_argument('--best_metric', type=str, default='error', help='Metric for determining the best model')
+parser.add_argument('--best_metric', type=str, default='Accuracy', help='Metric for determining the best model')
 
 ################
 # Model
 ################
 parser.add_argument('--model_code', type=str, default='bert', choices=MODELS.keys())
-parser.add_argument('--model_init_seed', type=int, default=None)
+parser.add_argument('--model_init_seed', type=int, default=2023)
 # BERT #
 parser.add_argument("--bin_num", type=int, default=10, help='Number of bins.')
-parser.add_argument('--bert_max_len', type=int, default=None, help='Length of sequence for bert')
+parser.add_argument('--bert_max_len', type=int, default=60, help='Length of sequence for bert')
 parser.add_argument("--sample_count", type=int, default=10000, help='Number of subjects')
 parser.add_argument('--bert_hidden_units', type=int, default=None, help='Size of hidden vectors (d_model)')
 parser.add_argument('--bert_num_blocks', type=int, default=None, help='Number of transformer layers')
 parser.add_argument('--bert_num_heads', type=int, default=None, help='Number of heads for multi-attention')
 parser.add_argument('--bert_dropout', type=float, default=None, help='Dropout probability to use throughout the model')
 parser.add_argument('--bert_mask_prob', type=float, default=None, help='Probability for masking items in the training sequence')
-
-
-parser.add_argument('--projectionhead', action='store_true')
+parser.add_argument('--bert_mask_token', type=float, default=1e-5, help='Token for masking items in the training sequence')
 parser.add_argument('--calcsim', type=str, default='cosine', choices=['cosine', 'dot'])
-
 
 parser.add_argument('--alpha', type=float, default=0.1, help='loss proportion learning rate')
 parser.add_argument('--lambda_', type=float, default=5, help='loss proportion significance indicator')
-parser.add_argument('--tau', type=float, default=1, help='contrastive loss temperature')
+parser.add_argument('--tau', type=float, default=0.5, help='contrastive loss temperature')
+parser.add_argument('--mixup_alpha', type=float, default=0.5, help='contrastive loss mixing parameter')
 parser.add_argument('--num_positive', type=int, default=4, help='number of positive samples')
 parser.add_argument('--slide_window_step', type=int, default = 10, help='number of steps for slide window')
-
 
 
 ###data augmentations###not used###
@@ -139,7 +135,7 @@ parser.add_argument('--DA_epochs', type=int, default=999, help='do not use data 
 
 ################
 
-parser.add_argument('--validateafter', type=int, default=100, help='validate after some epochs - save time')
+parser.add_argument('--validateafter', type=int, default=10, help='validate after some epochs - save time')
 
 ################
 # Experiment

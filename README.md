@@ -4,7 +4,7 @@ python pretrain.py --template train_bert --dataset_code UKB --test False --val T
 ```
 ## Test a pretrained checkpoint
 ```
-python test.py --template test_bert
+python validate.py --template validate_bert --test False --val True --bin_num 10
 ```
 * The checkpoint file is stored at /experiments/test_2022-04-26_0/models/best_acc_model.pth. You may need to download the checkpoint file manually from git LFS.
 

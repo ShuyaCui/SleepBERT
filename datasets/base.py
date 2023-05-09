@@ -2,9 +2,8 @@ from .utils import *
 from config import RAW_DATASET_ROOT_FOLDER
 
 import numpy as np
-import pandas as pd
 from tqdm import tqdm, trange
-tqdm.pandas()
+tqdm.pandas(desc='my_description')
 import torch
 
 from abc import *
@@ -38,8 +37,8 @@ class AbstractDataset(metaclass=ABCMeta):
         pass
 
     def load_dataset(self):
-        a = torch.zeros(2).to("cuda")
-        dataset_path = self._get_preprocessed_dataset_path()
+        # a = torch.zeros(2).to("cuda")
+        dataset_path = self._get_preprocessed_dataloader_path()
         if os.path.isfile(dataset_path):
             bin_edges = np.load(self._get_bin_edge_dataset_path())
             dataset = pickle.load(dataset_path.open('rb'))
@@ -49,11 +48,12 @@ class AbstractDataset(metaclass=ABCMeta):
         return dataset, bin_edges
 
     def preprocess(self, test=True, val = True):
-        dataset_path = self._get_preprocessed_dataset_path()
+        dataset_path = self._get_preprocessed_dataloader_path()
         if not dataset_path.parent.is_dir():
             dataset_path.parent.mkdir(parents=True)
 
         folder_path = self._get_rawdata_folder_path()
+        new_folder_path = self._get_preprocessed_dataset_path()
         input_files = os.listdir(folder_path)
         # all_files = {}
         min_val = 0
@@ -61,13 +61,15 @@ class AbstractDataset(metaclass=ABCMeta):
         for idx in trange(len(input_files)):
             file = input_files[idx]
             file_path = folder_path.joinpath(file)
-            input_files[idx] = file_path
             act = self.load_act_df(file_path)
+            new_file = str(file).replace("csv", "npy")
+            new_file_path = new_folder_path.joinpath(new_file)
+            np.save(new_file_path, act)
+            input_files[idx] = new_file_path
             if np.min(act) < min_val:
                 min_val = np.min(act)
             if np.max(act) > max_val:
                 max_val = np.max(act)
-            # all_files[idx] = act
         
         # calculate the bin edges using numpy's linspace function
         bin_edges = np.linspace(min_val, max_val, num=self.bin_num+1)
@@ -112,9 +114,13 @@ class AbstractDataset(metaclass=ABCMeta):
 
     def _get_preprocessed_dataset_path(self):
         folder = self._get_preprocessed_root_path()
+        return folder.joinpath(self.raw_code())
+    
+    def _get_preprocessed_dataloader_path(self):
+        folder = self._get_preprocessed_dataset_path()
         return folder.joinpath('dataset.pkl')
     
     def _get_bin_edge_dataset_path(self):
-        folder = self._get_preprocessed_root_path()
+        folder = self._get_preprocessed_dataset_path()
         return folder.joinpath('bin_edge.npy')
 

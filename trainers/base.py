@@ -33,8 +33,6 @@ class AbstractTrainer(metaclass=ABCMeta):
 
         self.num_epochs = args.num_epochs
 
-        self.metric_ks = args.metric_ks
-
         self.best_metric = args.best_metric
 
         self.export_root = export_root
@@ -65,7 +63,7 @@ class AbstractTrainer(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def calculate_loss(self, batch,epoch):
+    def calculate_loss(self, batch):
         pass
 
     @abstractmethod
@@ -77,7 +75,7 @@ class AbstractTrainer(metaclass=ABCMeta):
         accum_iter = 0
         for epoch in range(self.num_epochs):
             accum_iter = self.train_one_epoch(epoch, accum_iter)
-            if epoch > self.args.validateafter:
+            if epoch == self.args.validateafter:
                 self.validate(epoch,accum_iter)
         self.logger_service.complete({
             'state_dict': (self._create_state_dict()),
@@ -110,24 +108,19 @@ class AbstractTrainer(metaclass=ABCMeta):
         tqdm_dataloader = tqdm(self.train_loader)
 
         for batch_idx, batch in enumerate(tqdm_dataloader):
-
             batch_size = batch[0].size(0)
             real_batch = [x.to(self.device) for x in batch]
             #real_batch = [batch_[0],None,None,batch_[1],batch_[2]]
-
+            total_loss, main_loss, cl_loss = self.calculate_loss(real_batch)
 
             self.optimizer.zero_grad()
-
-            loss,cl_loss = self.calculate_loss(real_batch,False)
-            loss.backward()
-
+            total_loss.backward()
             self.optimizer.step()
 
-            average_meter_set.update('loss', loss.item())
-            average_meter_set.update('cl_loss', cl_loss.item())
+            average_meter_set.update('main_loss', main_loss.item())
+            average_meter_set.update('contrastive_loss', cl_loss.item())
             tqdm_dataloader.set_description(
-                'Epoch {}, loss {:.3f}, cl_loss {:.3f}  '.format(epoch + 1, average_meter_set['loss'].avg,
-                                                                 average_meter_set['cl_loss'].avg))
+                'Epoch {}, main_loss {:.3f}, contrastive_loss {:.3f}  '.format(epoch + 1, average_meter_set['main_loss'].avg,average_meter_set['contrastive_loss'].avg))
 
             accum_iter += batch_size
 
@@ -159,7 +152,7 @@ class AbstractTrainer(metaclass=ABCMeta):
 
             self.optimizer.zero_grad()
 
-            loss,cl_loss = self.calculate_loss(real_batch,epoch,enable_DA=True)
+            loss,cl_loss = self.calculate_loss(real_batch)
             loss.backward()
 
             self.optimizer.step()
@@ -199,14 +192,9 @@ class AbstractTrainer(metaclass=ABCMeta):
 
                 metrics = self.calculate_metrics(batch)
 
-                for k, v in metrics.items():
-                    average_meter_set.update(k, v)
-                description_metrics = ['NDCG@%d' % k for k in self.metric_ks[:3]] +\
-                                      ['Recall@%d' % k for k in self.metric_ks[:3]]
-                description = 'Val: ' + ', '.join(s + ' {:.3f}' for s in description_metrics)
-                description = description.replace('NDCG', 'N').replace('Recall', 'R')
-                description = description.format(*(average_meter_set[k].avg for k in description_metrics))
-                tqdm_dataloader.set_description(description)
+                average_meter_set.update('Accuracy', metrics)
+                
+                tqdm_dataloader.set_description('ACC {:.3f}'.format(average_meter_set['acc'].avg))
 
             log_data = {
                 'state_dict': (self._create_state_dict()),
@@ -216,7 +204,6 @@ class AbstractTrainer(metaclass=ABCMeta):
             log_data.update(average_meter_set.averages())
             self.log_extra_val_info(log_data)
             self.logger_service.log_val(log_data)
-
 
     def test(self):
         print('Test best model with test set!')
@@ -272,11 +259,7 @@ class AbstractTrainer(metaclass=ABCMeta):
         ]
 
         val_loggers = []
-        for k in self.metric_ks:
-            val_loggers.append(
-                MetricGraphPrinter(writer, key='NDCG@%d' % k, graph_name='NDCG@%d' % k, group_name='Validation'))
-            val_loggers.append(
-                MetricGraphPrinter(writer, key='Recall@%d' % k, graph_name='Recall@%d' % k, group_name='Validation'))
+        val_loggers.append(MetricGraphPrinter(writer, key='acc', graph_name='Acc', group_name='Validation'))
         val_loggers.append(RecentModelLogger(model_checkpoint))
         val_loggers.append(BestModelLogger(model_checkpoint, metric_key=self.best_metric))
         return writer, train_loggers, val_loggers
